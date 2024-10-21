@@ -1,4 +1,6 @@
 {
     "go.testFlags": ["-race"],
-    "go.testTimeout": "120s"
+    "go.testTimeout": "120s",
+    "files.eol": "\n",
+    "files.trimTrailingWhitespace": true
 }
