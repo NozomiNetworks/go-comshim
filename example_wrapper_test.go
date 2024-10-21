@@ -3,9 +3,9 @@ package comshim_test
 import (
 	"sync"
 
+	"github.com/NozomiNetworks/go-comshim"
 	"github.com/go-ole/go-ole"
 	"github.com/go-ole/go-ole/oleutil"
-	"github.com/scjalliance/comshim"
 )
 
 // Object wraps a COM interface in a way that is safe for multi-threaded access.

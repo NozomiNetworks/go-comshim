@@ -1,6 +1,6 @@
 package comshim_test
 
-import "github.com/scjalliance/comshim"
+import "github.com/NozomiNetworks/go-comshim"
 
 func Example_globalUsage() {
 	// This ensures that at least one thread maintains an initialized

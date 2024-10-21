@@ -1,0 +1,4 @@
+{
+    "go.testFlags": ["-race"],
+    "go.testTimeout": "120s"
+}
