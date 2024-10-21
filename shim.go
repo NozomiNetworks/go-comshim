@@ -17,12 +17,12 @@ var (
 // Loader maintains CoInitializeEx as long as required
 // https://learn.microsoft.com/en-us/windows/win32/api/combaseapi/nf-combaseapi-coinitializeex
 type Loader struct {
-	startAccess  sync.Mutex
-	loaded       bool
-	signalAccess sync.Mutex
-	signal       sync.Cond
-	workTotal    atomic.Int64 // https://pkg.go.dev/sync/atomic#pkg-note-BUG
-	wg           sync.WaitGroup
+	startAccess   sync.Mutex
+	loaded        bool
+	signalAccess  sync.Mutex
+	signal        sync.Cond
+	requiredTotal atomic.Int64 // https://pkg.go.dev/sync/atomic#pkg-note-BUG
+	wg            sync.WaitGroup
 }
 
 // NewLoader usage:
@@ -33,9 +33,9 @@ type Loader struct {
 //	comLoader.Load()
 //	defer comLoader.Unload()
 func NewLoader() *Loader {
-	shim := Loader{}
-	shim.signal.L = &shim.signalAccess
-	return &shim
+	loader := Loader{}
+	loader.signal.L = &loader.signalAccess
+	return &loader
 }
 
 // Load loads COM, call Unload when COM is no longer required.
@@ -65,8 +65,11 @@ func (s *Loader) Unload() {
 func (s *Loader) requiredBy(delta int64) {
 	s.signalAccess.Lock()
 	defer s.signalAccess.Unlock()
-	value := s.workTotal.Add(delta)
-	s.signal.Signal()
+	value := s.requiredTotal.Add(delta)
+	if value == 0 {
+		s.signal.Signal()
+		return
+	}
 	if value < 0 { // invalid usage
 		panic(ErrNegativeCounter)
 	}
@@ -75,37 +78,38 @@ func (s *Loader) requiredBy(delta int64) {
 func (s *Loader) start() error {
 	init := make(chan error)
 	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		runtime.LockOSThread()
-		defer runtime.UnlockOSThread()
-		err := ole.CoInitializeEx(0, ole.COINIT_MULTITHREADED)
-		if err != nil {
-			switch err.(*ole.OleError).Code() {
-			case 0x00000001: // windows.S_FALSE
-				ole.CoUninitialize()
-				init <- ErrAlreadyInitialized
-			default:
-				init <- err
-			}
-			close(init)
-			return
-		}
-
-		close(init)
-
-		{ // work until no longer required
-			s.signalAccess.Lock()
-			for s.workTotal.Load() > 0 {
-				s.signal.Wait()
-			}
-			s.loaded = false
-			ole.CoUninitialize()
-			s.signalAccess.Unlock()
-		}
-	}()
-
+	go s.maintainCOM(init)
 	return <-init
+}
+
+func (s *Loader) maintainCOM(init chan error) {
+	defer s.wg.Done()
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	err := ole.CoInitializeEx(0, ole.COINIT_MULTITHREADED)
+	if err != nil {
+		switch err.(*ole.OleError).Code() {
+		case 0x00000001: // windows.S_FALSE
+			ole.CoUninitialize()
+			init <- ErrAlreadyInitialized
+		default:
+			init <- err
+		}
+		close(init)
+		return
+	}
+
+	close(init)
+
+	{ // work until no longer required
+		s.signalAccess.Lock()
+		for s.requiredTotal.Load() > 0 {
+			s.signal.Wait()
+		}
+		s.loaded = false
+		ole.CoUninitialize()
+		s.signalAccess.Unlock()
+	}
 }
 
 func (s *Loader) Wait() {

@@ -4,11 +4,11 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+	
+	"github.com/NozomiNetworks/go-comshim"
 
 	"github.com/go-ole/go-ole"
 	"github.com/go-ole/go-ole/oleutil"
-
-	"github.com/NozomiNetworks/go-comshim"
 
 	"github.com/stretchr/testify/assert"
 )

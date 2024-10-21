@@ -3,6 +3,8 @@ package comshim_test
 import (
 	"sync"
 
+	"github.com/NozomiNetworks/go-comshim"
+
 	"github.com/go-ole/go-ole"
 	"github.com/go-ole/go-ole/oleutil"
 )
