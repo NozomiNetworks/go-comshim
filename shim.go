@@ -22,7 +22,6 @@ type Shim struct {
 	c       Counter // An atomic counter
 	running bool
 	wg      sync.WaitGroup
-	wgMutex sync.RWMutex
 }
 
 // New returns a new shim for keeping component object model resources allocated
@@ -89,6 +88,8 @@ func (s *Shim) Add(delta int) {
 
 // Done decrements the counter for the shim.
 func (s *Shim) Done() {
+	s.m.Lock()
+	defer s.m.Unlock()
 	s.add(-1)
 }
 
@@ -102,15 +103,9 @@ func (s *Shim) add(delta int) {
 	}
 }
 
-func (s *Shim) addRoutine() {
-	s.wgMutex.Lock()
-	defer s.wgMutex.Unlock()
-	s.wg.Add(1)
-}
-
 func (s *Shim) run() error {
 	init := make(chan error)
-	s.addRoutine()
+	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
 		runtime.LockOSThread()
@@ -152,7 +147,5 @@ func (s *Shim) run() error {
 }
 
 func (s *Shim) WaitDone() {
-	s.wgMutex.Lock()
-	defer s.wgMutex.Unlock()
 	s.wg.Wait()
 }
