@@ -17,17 +17,20 @@ import (
 // As long as the counter is greater than zero then the goroutine will remain
 // in a blocked condition with its COM connection intact.
 type Shim struct {
-	m       sync.RWMutex
-	cond    sync.Cond
-	c       Counter // An atomic counter
-	running bool
+	startAccess  sync.RWMutex
+	running      bool
+	cond         sync.Cond
+	signalAccess sync.RWMutex
+	c            Counter // An atomic counter
+	wg           sync.WaitGroup
 }
 
 // New returns a new shim for keeping component object model resources allocated
 // within a process.
 func New() *Shim {
 	shim := new(Shim)
-	shim.cond.L = &shim.m
+	shim.cond.L = &shim.signalAccess
+	shim.wg = sync.WaitGroup{}
 	return shim
 }
 
@@ -42,19 +45,14 @@ func New() *Shim {
 //
 // If the shim cannot be created for some reason, TryAdd returns an error.
 func (s *Shim) TryAdd(delta int) error {
-	// Check whether the shim is already running within a read lock
-	s.m.RLock()
+	s.startAccess.Lock()
+	defer s.startAccess.Unlock()
+	s.add(delta)
 	if s.running {
-		s.add(delta)
-		s.m.RUnlock()
-		return nil
+		return nil //already loaded
 	}
-	s.m.RUnlock()
 
 	// The shim wasn't running; only change the running state within a write lock
-	s.m.Lock()
-	defer s.m.Unlock()
-	s.add(delta)
 	if s.running {
 		// The shim was started between the read lock and the write lock
 		return nil
@@ -90,6 +88,8 @@ func (s *Shim) Done() {
 }
 
 func (s *Shim) add(delta int) {
+	s.signalAccess.Lock()
+	defer s.signalAccess.Unlock()
 	value := s.c.Add(int64(delta))
 	if value == 0 {
 		s.cond.Broadcast()
@@ -101,8 +101,9 @@ func (s *Shim) add(delta int) {
 
 func (s *Shim) run() error {
 	init := make(chan error)
-
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 
@@ -129,14 +130,20 @@ func (s *Shim) run() error {
 
 		close(init)
 
-		s.m.Lock()
+		s.signalAccess.Lock()
 		for s.c.Value() > 0 {
 			s.cond.Wait()
 		}
 		s.running = false
 		ole.CoUninitialize()
-		s.m.Unlock()
+		s.signalAccess.Unlock()
 	}()
 
 	return <-init
+}
+
+func (s *Shim) WaitDone() {
+	s.startAccess.Lock()
+	defer s.startAccess.Unlock()
+	s.wg.Wait()
 }
