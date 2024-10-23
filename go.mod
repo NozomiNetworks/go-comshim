@@ -1,6 +1,6 @@
 module github.com/NozomiNetworks/go-comshim
 
-go 1.22
+go 1.20
 
 require (
 	github.com/go-ole/go-ole v1.3.0
